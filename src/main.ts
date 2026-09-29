@@ -311,7 +311,8 @@ async function bootstrap() {
     document.querySelectorAll('.authGate').forEach(x => x.remove());
     const badge=document.querySelector<HTMLElement>('#userRole'); if(badge) badge.textContent='Зочин · Demo';
     const login=document.querySelector<HTMLButtonElement>('#signOut'); if(login){ login.textContent='Google-ээр нэвтрэх'; login.onclick=async()=>{ try{ await auth.signIn({scope:'openid email profile offline_access'}); location.reload(); }catch{ alert('Google нэвтрэлт амжилтгүй. Дахин оролдоно уу.'); } }; }
-    document.querySelectorAll<HTMLButtonElement>('.nav').forEach(b=>{ if((b.dataset.view||'')!=='dashboard') b.style.display='none'; });
+    document.querySelectorAll<HTMLButtonElement>('.nav').forEach(b=>{ b.style.display=''; });
+    document.querySelectorAll<HTMLButtonElement>('.nav').forEach(b=>{b.onclick=()=>activateNav(b.dataset.view||'dashboard');});
     load();
     return;
   }
