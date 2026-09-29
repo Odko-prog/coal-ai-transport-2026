@@ -3,7 +3,15 @@ type ApiResponse<T=any>={data:T};
 const API_BASE=(import.meta.env.VITE_API_BASE||'https://coal-ai-api-staging.onrender.com').replace(/\/$/,'');
 const request=async<T=any>(path:string,init:RequestInit={}):Promise<ApiResponse<T>>=>{const res=await fetch(API_BASE+path,{...init,headers:{'Content-Type':'application/json',...(init.headers||{})},credentials:'include'});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data?.message||('HTTP '+res.status));return {data};};
 const api={get:<T=any>(path:string)=>request<T>(path),post:<T=any>(path:string,body:any)=>request<T>(path,{method:'POST',body:JSON.stringify(body)})};
-const auth={isSignedIn:()=>false,signIn:async()=>{location.href=API_BASE+'/api/auth/google?returnTo='+encodeURIComponent(location.href);},signOut:async()=>{await request('/api/auth/logout',{method:'POST'}).catch(()=>undefined);},getUser:async()=>null};
+type SessionUser={authorized:boolean;userId?:string;email?:string;name?:string;role?:'admin'|'dispatcher'|'mechanic'};
+let sessionCache:SessionUser|null=null;
+const loadSession=async(force=false):Promise<SessionUser>=>{if(sessionCache&&!force)return sessionCache;try{sessionCache=(await request<SessionUser>('/api/me')).data;return sessionCache;}catch{sessionCache={authorized:false};return sessionCache;}};
+const auth={
+ isSignedIn:async()=>Boolean((await loadSession()).authorized),
+ signIn:async(_opts?:any)=>{location.href=API_BASE+'/api/auth/google?returnTo='+encodeURIComponent(location.href);},
+ signOut:async()=>{await request('/api/auth/logout',{method:'POST'}).catch(()=>undefined);sessionCache={authorized:false};},
+ getUser:async()=>{const u=await loadSession();return u.authorized?u:null;}
+};
 const invitesClient={getPendingCode:()=>new URLSearchParams(location.search).get('invite'),clearPendingCode:()=>{const u=new URL(location.href);u.searchParams.delete('invite');history.replaceState({},'',u);},buildJoinUrl:(code:string,{path='/' }:{path?:string}={})=>location.origin+path+'?invite='+encodeURIComponent(code)};
 
 
@@ -295,7 +303,7 @@ async function bootstrap() {
 
   const pendingInvite = invitesClient.getPendingCode();
 
-  if (!auth.isSignedIn()) {
+  if (!(await auth.isSignedIn())) {
     guestMode = true;
     document.querySelectorAll('.authGate').forEach(x => x.remove());
     const badge=document.querySelector<HTMLElement>('#userRole'); if(badge) badge.textContent='Зочин · Demo';
