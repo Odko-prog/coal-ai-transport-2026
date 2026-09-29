@@ -1,6 +1,8 @@
 import express from 'express';
 import pg from 'pg';
 import crypto from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
 const {Pool}=pg;
 const app=express();const PORT=Number(process.env.PORT||3000);
 app.use(express.json({limit:'2mb'}));
@@ -160,4 +162,9 @@ app.post('/api/admin/migration-import',requireAuth,requireRole('admin'),async(re
 });
 
 app.get('/api/me',async(req,res)=>{try{const u=await sessionUser(req);if(!u||u.status==='blocked')return res.status(401).json({authorized:false});res.json({authorized:true,userId:u.userId,email:u.email,name:u.name,role:u.role,migration:true});}catch{res.status(500).json({authorized:false,message:'Auth шалгалт амжилтгүй'});}});
+
+// Serve the built frontend from the same Render service. This removes cross-origin session/cookie issues.
+const __filename=fileURLToPath(import.meta.url);const __dirname=path.dirname(__filename);const dist=path.join(__dirname,'dist');
+app.use(express.static(dist));
+app.get(/.*/,(_req,res)=>res.sendFile(path.join(dist,'index.html')));
 app.listen(PORT,'0.0.0.0',()=>console.log('COAL AI Render API listening on '+PORT));
