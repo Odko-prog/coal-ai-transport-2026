@@ -110,5 +110,26 @@ app.get('/api/dashboard',requireAuth,async(req,res)=>{
   res.json({vehicles:vehicles.length,active,repair,idle,trips:trips.length,tons,fuel:fuelTotal,alerts,dataMode:'registered',fleet:vehicles.slice(0,12).map(v=>({plate:v.plate||v.number||'—',driver:v.driver||v.driverName||'—',status:v.status||'—',trips:n(v.trips),tons:n(v.tons),fuel:n(v.fuel)}))});
  }catch{res.status(500).json({message:'Database query failed'});}
 });
+app.get('/api/daily-brief',requireAuth,async(req,res)=>{
+ if(!ensureDb(res))return;
+ try{
+  const q=await pool.query('select kind,data from fleet_records where user_id=$1',[req.user.userId]);
+  const by=(kind)=>q.rows.filter(r=>r.kind===kind).map(r=>r.data||{}),n=(v)=>Number(v||0)||0;
+  const vehicles=by('vehicles'),trips=by('trips'),fuel=by('fuel'),maintenance=by('maintenance');
+  const active=vehicles.filter(v=>['Тээвэрт','active','working'].includes(String(v.status||''))).length;
+  const repair=vehicles.filter(v=>['Засварт','repair','maintenance'].includes(String(v.status||''))).length;
+  const tons=trips.reduce((s,x)=>s+n(x.tons??x.tonnage??x.weight),0);
+  const liters=fuel.reduce((s,x)=>s+n(x.liters??x.litres??x.amount??x.fuel),0);
+  const openMaint=maintenance.filter(x=>!['done','completed','Дууссан'].includes(String(x.status||''))).length;
+  const hasReal=q.rowCount>0;
+  const report=hasReal
+   ?`Өдрийн үйл ажиллагааны илтгэл. Нийт ${vehicles.length} машин бүртгэлтэйгээс ${active} машин тээвэрт, ${repair} машин засварт байна. Нийт ${trips.length} рейсээр ${tons} тонн ачаа бүртгэгдсэн. Түлшний бүртгэл ${liters} литр байна. Нээлттэй засвар үйлчилгээний бүртгэл ${openMaint} байна.`
+   :'Одоогоор компанийн бодит бүртгэл ороогүй байна. Самбар дээрх жишээ мэдээллийг бодит үйл ажиллагааны тайлан гэж үзэхгүй.';
+  res.json({ok:true,dataMode:hasReal?'registered':'demo',report,voiceText:report,summary:{vehicles:vehicles.length,active,repair,trips:trips.length,tons,fuel:liters,openMaintenance:openMaint}});
+ }catch{res.status(500).json({message:'Өдрийн илтгэл үүсгэхэд алдаа гарлаа'});}
+});
+app.post('/api/tts',requireAuth,(_req,res)=>res.json({ok:false,fallback:'browser',message:'Browser Монгол voice ашиглана.'}));
+app.post('/api/stt',requireAuth,(_req,res)=>res.json({ok:false,fallback:'browser',message:'Browser speech recognition ашиглана.'}));
+
 app.get('/api/me',async(req,res)=>{try{const u=await sessionUser(req);if(!u||u.status==='blocked')return res.status(401).json({authorized:false});res.json({authorized:true,userId:u.userId,email:u.email,name:u.name,role:u.role,migration:true});}catch{res.status(500).json({authorized:false,message:'Auth шалгалт амжилтгүй'});}});
 app.listen(PORT,'0.0.0.0',()=>console.log('COAL AI Render API listening on '+PORT));
