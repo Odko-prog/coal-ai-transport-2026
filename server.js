@@ -131,5 +131,30 @@ app.get('/api/daily-brief',requireAuth,async(req,res)=>{
 app.post('/api/tts',requireAuth,(_req,res)=>res.json({ok:false,fallback:'browser',message:'Browser Монгол voice ашиглана.'}));
 app.post('/api/stt',requireAuth,(_req,res)=>res.json({ok:false,fallback:'browser',message:'Browser speech recognition ашиглана.'}));
 
+app.get('/api/admin/migration-summary',requireAuth,requireRole('admin'),async(req,res)=>{
+ if(!ensureDb(res))return;
+ try{
+  const users=await pool.query('select user_id,email,role,status from company_users order by email');
+  const counts=await pool.query('select user_id,kind,count(*)::int as count from fleet_records group by user_id,kind order by user_id,kind');
+  res.json({ok:true,users:users.rows,counts:counts.rows,totalRecords:counts.rows.reduce((s,r)=>s+Number(r.count||0),0),note:'Count/ownership verification only; no production data is modified.'});
+ }catch{res.status(500).json({message:'Migration summary failed'});}
+});
+app.post('/api/admin/migration-import',requireAuth,requireRole('admin'),async(req,res)=>{
+ if(!ensureDb(res))return;
+ if(process.env.MIGRATION_IMPORT_ENABLED!=='true')return res.status(403).json({message:'Migration import disabled'});
+ const records=Array.isArray(req.body?.records)?req.body.records:[];
+ if(!records.length||records.length>10000)return res.status(400).json({message:'Invalid migration batch'});
+ const allowed=new Set(['vehicles','trips','fuel','maintenance','tires','documents','drivers']);
+ const clean=records.filter(r=>r&&typeof r.userId==='string'&&allowed.has(r.kind)&&r.data&&typeof r.data==='object'&&!Array.isArray(r.data));
+ if(clean.length!==records.length)return res.status(400).json({message:'Migration validation failed'});
+ const client=await pool.connect();
+ try{
+  await client.query('begin');
+  for(const r of clean)await client.query('insert into fleet_records(user_id,kind,data) values($1,$2,$3::jsonb)',[r.userId,r.kind,JSON.stringify(r.data)]);
+  await client.query('commit');
+  res.json({ok:true,imported:clean.length});
+ }catch{await client.query('rollback');res.status(500).json({message:'Migration rolled back; no partial batch committed'});}finally{client.release();}
+});
+
 app.get('/api/me',async(req,res)=>{try{const u=await sessionUser(req);if(!u||u.status==='blocked')return res.status(401).json({authorized:false});res.json({authorized:true,userId:u.userId,email:u.email,name:u.name,role:u.role,migration:true});}catch{res.status(500).json({authorized:false,message:'Auth шалгалт амжилтгүй'});}});
 app.listen(PORT,'0.0.0.0',()=>console.log('COAL AI Render API listening on '+PORT));
