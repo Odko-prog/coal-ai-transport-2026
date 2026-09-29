@@ -521,3 +521,8 @@ main { color:#17263d; }
   .flowMetrics > div:last-child { border-bottom:0; }
   .ring { width:40px; height:40px; }
 }
+
+/* Fixed desktop command-center canvas on phones: preserve laptop layout and allow browser zoom/pan. */
+html,body,#app{min-width:1440px!important;}
+body{overflow-x:auto!important;}
+#app{width:1440px!important;max-width:none!important;margin:0 auto!important;}
