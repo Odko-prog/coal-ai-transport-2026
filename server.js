@@ -19,6 +19,33 @@ const sessionUser=async(req)=>{
 const requireAuth=async(req,res,next)=>{try{const u=await sessionUser(req);if(!u||u.status==='blocked')return res.status(401).json({message:'Нэвтрэх шаардлагатай'});req.user=u;next();}catch{return res.status(500).json({message:'Auth шалгалт амжилтгүй'});}};
 const requireRole=(...roles)=>(req,res,next)=>roles.includes(req.user?.role)?next():res.status(403).json({message:'Эрх хүрэлцэхгүй'});
 
+const RECORD_KINDS=new Set(['vehicles','trips','fuel','maintenance','tires','documents','drivers']);
+const ensureDb=(res)=>{if(pool)return true;res.status(503).json({message:'Database тохируулагдаагүй'});return false;};
+const validBody=(body)=>body&&typeof body==='object'&&!Array.isArray(body);
+app.get('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)',requireAuth,async(req,res)=>{
+  if(!ensureDb(res))return;
+  try{
+    const q=await pool.query('select id,data,created_at from fleet_records where user_id=$1 and kind=$2 order by created_at desc',[req.user.userId,req.params.kind]);
+    res.json({items:q.rows.map(r=>({id:r.id,...r.data,createdAt:r.created_at}))});
+  }catch{res.status(500).json({message:'Өгөгдөл уншихад алдаа гарлаа'});}
+});
+app.post('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)',requireAuth,requireRole('admin','dispatcher','mechanic'),async(req,res)=>{
+  if(!ensureDb(res))return;
+  if(!validBody(req.body))return res.status(400).json({message:'Буруу өгөгдөл'});
+  try{
+    const q=await pool.query('insert into fleet_records(user_id,kind,data) values($1,$2,$3::jsonb) returning id,data,created_at',[req.user.userId,req.params.kind,JSON.stringify(req.body)]);
+    const r=q.rows[0];res.status(201).json({message:'Амжилттай бүртгэлээ',item:{id:r.id,...r.data,createdAt:r.created_at}});
+  }catch{res.status(500).json({message:'Бүртгэл хадгалахад алдаа гарлаа'});}
+});
+app.delete('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)/:id',requireAuth,requireRole('admin','dispatcher'),async(req,res)=>{
+  if(!ensureDb(res))return;
+  try{
+    const q=await pool.query('delete from fleet_records where id=$1 and user_id=$2 and kind=$3 returning id',[req.params.id,req.user.userId,req.params.kind]);
+    if(!q.rowCount)return res.status(404).json({message:'Бүртгэл олдсонгүй'});
+    res.json({ok:true});
+  }catch{res.status(500).json({message:'Устгахад алдаа гарлаа'});}
+});
+
 const fleet=[{plate:'ӨМӨ 8214',driver:'Б. Батсайхан',status:'Тээвэрт',trips:4,tons:152,fuel:438},{plate:'ӨМӨ 7741',driver:'Д. Тэмүүлэн',status:'Тээвэрт',trips:3,tons:114,fuel:321},{plate:'ӨМӨ 6108',driver:'Г. Мөнхтөр',status:'Засварт',trips:0,tons:0,fuel:0},{plate:'ӨМӨ 9320',driver:'Н. Энхбат',status:'Тээвэрт',trips:4,tons:148,fuel:512},{plate:'ӨМӨ 5582',driver:'С. Батзориг',status:'Сул',trips:0,tons:0,fuel:0}];
 const demo=()=>({vehicles:42,active:34,repair:5,idle:3,trips:164,tons:6420,fuel:18730,alerts:[{level:'medium',text:'Demo: 5 машин засварын төлөвтэй.'},{level:'low',text:'Demo GPS · бодит байршил биш.'}],dataMode:'demo',fleet});
 app.get('/api/health',async(_q,res)=>{let database='not-configured';try{if(pool){await pool.query('select 1');database='connected';}}catch{database='error';}res.json({ok:true,service:'COAL AI Render API',version:'3.0.0',database});});
