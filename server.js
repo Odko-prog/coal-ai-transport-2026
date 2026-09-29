@@ -62,14 +62,16 @@ app.get('/api/auth/google/callback',async(req,res)=>{
 const RECORD_KINDS=new Set(['vehicles','trips','fuel','maintenance','tires','documents','drivers']);
 const ensureDb=(res)=>{if(pool)return true;res.status(503).json({message:'Database тохируулагдаагүй'});return false;};
 const validBody=(body)=>body&&typeof body==='object'&&!Array.isArray(body);
-app.get('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)',requireAuth,async(req,res)=>{
+app.get('/api/:kind',requireAuth,async(req,res)=>{
+  if(!RECORD_KINDS.has(req.params.kind))return res.status(404).json({message:'Endpoint олдсонгүй'});
   if(!ensureDb(res))return;
   try{
     const q=await pool.query('select id,data,created_at from fleet_records where user_id=$1 and kind=$2 order by created_at desc',[req.user.userId,req.params.kind]);
     res.json({items:q.rows.map(r=>({id:r.id,...r.data,createdAt:r.created_at}))});
   }catch{res.status(500).json({message:'Өгөгдөл уншихад алдаа гарлаа'});}
 });
-app.post('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)',requireAuth,requireRole('admin','dispatcher','mechanic'),async(req,res)=>{
+app.post('/api/:kind',requireAuth,requireRole('admin','dispatcher','mechanic'),async(req,res)=>{
+  if(!RECORD_KINDS.has(req.params.kind))return res.status(404).json({message:'Endpoint олдсонгүй'});
   if(!ensureDb(res))return;
   if(!validBody(req.body))return res.status(400).json({message:'Буруу өгөгдөл'});
   try{
@@ -77,7 +79,8 @@ app.post('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)',r
     const r=q.rows[0];res.status(201).json({message:'Амжилттай бүртгэлээ',item:{id:r.id,...r.data,createdAt:r.created_at}});
   }catch{res.status(500).json({message:'Бүртгэл хадгалахад алдаа гарлаа'});}
 });
-app.delete('/api/:kind(vehicles|trips|fuel|maintenance|tires|documents|drivers)/:id',requireAuth,requireRole('admin','dispatcher'),async(req,res)=>{
+app.delete('/api/:kind/:id',requireAuth,requireRole('admin','dispatcher'),async(req,res)=>{
+  if(!RECORD_KINDS.has(req.params.kind))return res.status(404).json({message:'Endpoint олдсонгүй'});
   if(!ensureDb(res))return;
   try{
     const q=await pool.query('delete from fleet_records where id=$1 and user_id=$2 and kind=$3 returning id',[req.params.id,req.user.userId,req.params.kind]);
