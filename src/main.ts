@@ -1,6 +1,6 @@
 import './styles.css';
 type ApiResponse<T=any>={data:T};
-const API_BASE=(import.meta.env.VITE_API_BASE||'https://coal-ai-github-staging-api.onrender.com').replace(/\/$/,'');
+const API_BASE=(import.meta.env.VITE_API_BASE||location.origin).replace(/\/$/,'');
 const request=async<T=any>(path:string,init:RequestInit={}):Promise<ApiResponse<T>>=>{const res=await fetch(API_BASE+path,{...init,headers:{'Content-Type':'application/json',...(init.headers||{})},credentials:'include'});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data?.message||('HTTP '+res.status));return {data};};
 const api={get:<T=any>(path:string)=>request<T>(path),post:<T=any>(path:string,body:any)=>request<T>(path,{method:'POST',body:JSON.stringify(body)}),delete:<T=any>(path:string)=>request<T>(path,{method:'DELETE'})};
 type SessionUser={authorized:boolean;userId?:string;email?:string;name?:string;role?:'admin'|'dispatcher'|'mechanic'};
