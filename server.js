@@ -35,6 +35,30 @@ app.get('/api/auth/google',(req,res)=>{
  const u=new URL('https://accounts.google.com/o/oauth2/v2/auth');u.searchParams.set('client_id',clientId);u.searchParams.set('redirect_uri',redirectUri);u.searchParams.set('response_type','code');u.searchParams.set('scope','openid email profile');u.searchParams.set('state',signedState);res.redirect(u.toString());
 });
 
+app.get('/api/auth/google/callback',async(req,res)=>{
+ try{
+  const clientId=process.env.GOOGLE_CLIENT_ID||'',clientSecret=process.env.GOOGLE_CLIENT_SECRET||'',redirectUri=process.env.GOOGLE_REDIRECT_URI||'';
+  if(!clientId||!clientSecret||!redirectUri||!SESSION_SECRET||!pool)return res.status(503).send('Login тохиргоо дутуу байна');
+  const [state,sig]=String(req.query.state||'').split('.');const expected=sign(state||'');
+  if(!state||!sig||sig.length!==expected.length||!crypto.timingSafeEqual(Buffer.from(sig),Buffer.from(expected)))return res.status(400).send('OAuth state буруу');
+  const stateData=JSON.parse(Buffer.from(state,'base64url').toString('utf8'));
+  const tokenRes=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code:String(req.query.code||''),client_id:clientId,client_secret:clientSecret,redirect_uri:redirectUri,grant_type:'authorization_code'})});
+  if(!tokenRes.ok)return res.status(401).send('Google token авахад алдаа гарлаа');
+  const tokens=await tokenRes.json();const infoRes=await fetch('https://openidconnect.googleapis.com/v1/userinfo',{headers:{Authorization:'Bearer '+tokens.access_token}});
+  if(!infoRes.ok)return res.status(401).send('Google хэрэглэгч баталгаажсангүй');
+  const profile=await infoRes.json();const email=String(profile.email||'').trim().toLowerCase();
+  if(!email||profile.email_verified!==true)return res.status(403).send('Баталгаажсан Google email шаардлагатай');
+  let q=await pool.query('select user_id,email,name,role,status from company_users where lower(email)=lower($1) limit 1',[email]);
+  if(!q.rows[0]&&email===ADMIN_EMAIL){await pool.query("insert into company_users(user_id,email,name,role,status,access_count,first_access,last_access) values($1,$2,$3,'admin','allowed',0,now(),now())",[String(profile.sub||email),email,String(profile.name||email)]);q=await pool.query('select user_id,email,name,role,status from company_users where lower(email)=lower($1) limit 1',[email]);}
+  const user=q.rows[0];if(!user||user.status==='blocked')return res.status(403).send('Энэ хэрэглэгчид COAL AI эрх олгогдоогүй байна');
+  await pool.query('update company_users set name=coalesce(nullif($1,\'\'),name),access_count=coalesce(access_count,0)+1,last_access=now() where user_id=$2',[String(profile.name||''),user.user_id]);
+  setSession(res,email);
+  const allowedOrigin=process.env.FRONTEND_ORIGIN||'/';let returnTo=String(stateData.returnTo||allowedOrigin);
+  try{const target=new URL(returnTo);const origin=new URL(allowedOrigin).origin;if(target.origin!==origin)returnTo=allowedOrigin;}catch{returnTo=allowedOrigin;}
+  res.redirect(returnTo);
+ }catch{res.status(500).send('Google login callback амжилтгүй');}
+});
+
 const RECORD_KINDS=new Set(['vehicles','trips','fuel','maintenance','tires','documents','drivers']);
 const ensureDb=(res)=>{if(pool)return true;res.status(503).json({message:'Database тохируулагдаагүй'});return false;};
 const validBody=(body)=>body&&typeof body==='object'&&!Array.isArray(body);
