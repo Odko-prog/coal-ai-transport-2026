@@ -1,0 +1,80 @@
+# Tests
+
+## Test 1 - Sign in and use Mongolian AI report [sanity]
+Viewport: desktop
+Covers: Google authentication, direct first-time dispatcher access without invite, GET /api/me auto-enrollment, Туслахаа Voice AI reliable push-to-talk control with single recognition session and explicit reset, POST /api/ai-manager complete-answer generation with explicit conclusion, smaller chunked sequential POST /api/tts full-answer playback with retry and sentence-level browser fallback, extended daily report rendering, sequential POST /api/tts long-report playback, audio playback and stop controls
+Description: Verifies a new Google user can sign in directly without an admin invite, receives dispatcher access, and can use the sample Mongolian AI report and voice controls.
+Steps:
+1. Sign in with a new Google account that has no prior invite or role and enable Туслахаа Voice AI on the dashboard
+2. Enable “Сэрээх үг” on a supported Chrome/Edge browser and verify the button visibly changes to “✓ Туслахаа идэвхтэй”; say “Туслахаа”, ask a transport question, and verify the assistant stays busy until the complete server TTS answer finishes, then returns to listening. Also verify “🎤 Ярих” still works; then open "AI Өдрийн илтгэл", press "Жишээ илтгэл", and press "Монгол AI-аар уншуулах"
+3. Press "Зогсоох"
+Expected: After Google sign-in the app auto-enrolls the user as Dispatcher and opens the dashboard without requiring an invite. Supported Chrome/Edge browsers visibly activate wake mode as “✓ Туслахаа идэвхтэй”, recognize “Туслахаа”, keep recognition paused while AI/server TTS is busy, play the complete answer, and automatically return to wake listening afterward. Push-to-talk remains available. Unsupported or denied microphone states visibly deactivate wake mode and explain what to do. The daily report is detailed enough for a multi-minute briefing, long report audio is split into sequential TTS parts and all parts play in order; Stop ends playback.
+
+## Test 2 - Show retry guidance when Mongolian AI audio generation fails
+Viewport: desktop
+Covers: POST /api/tts failure handling, visible retry state
+Description: Verifies an external TTS failure produces a visible Mongolian error instead of silently failing.
+QA Faults:
+```json
+[
+  {
+    "method": "POST",
+    "path": "/api/tts",
+    "status": 503,
+    "body_json": { "error": "simulated_failure" }
+  }
+]
+```
+Steps:
+1. Open "AI Өдрийн илтгэл" and press "Жишээ илтгэл"
+2. Press "Монгол AI-аар уншуулах"
+Expected: No audio plays, a visible error is shown, and the report remains available to retry.
+
+## Test 3 - Phone preserves the full desktop dashboard and supports zoom
+Viewport: mobile
+Covers: desktop-layout-on-mobile, browser pinch zoom and pan, mobile server-side voice controls, mechanic navigation permission
+Description: Verifies a phone opens the same full laptop-style COAL AI layout instead of switching to a stacked mobile layout, while normal browser zoom and panning remain available.
+Steps:
+1. Sign in as an authorized mechanic on mobile and open the dashboard
+2. Verify the left sidebar, full dashboard columns, hero, map and desktop navigation remain in their desktop arrangement
+3. Pinch-zoom in and pan to a section, then open "AI Өдрийн илтгэл" and use the voice controls
+Expected: The phone initially shows the full desktop-width COAL AI interface scaled to fit. It does not reflow into the mobile stacked/menu layout; browser pinch zoom and panning can enlarge and navigate the interface, and the existing report/voice functions remain usable.
+
+## Test 4 - Show retry guidance when daily AI generation fails
+Viewport: desktop
+Covers: GET /api/daily-brief failure handling, voice disabled state, visible retry state
+Description: Verifies a backend AI report failure does not expose an unusable voice action.
+QA Faults:
+```json
+[
+  {
+    "method": "GET",
+    "path": "/api/daily-brief",
+    "status": 503,
+    "body_json": { "error": "simulated_failure" }
+  }
+]
+```
+Steps:
+1. Open "AI Өдрийн илтгэл"
+Expected: A visible error tells the user to retry, and the AI voice play control remains disabled.
+
+## Test 5 - Direct public guest entry and protected production data
+Viewport: mobile
+Covers: shared public link opening without login, public demo dashboard, protected authenticated data boundary, optional Google sign-in
+Description: Verifies the normal COAL AI link opens immediately in safe Guest Demo mode while real company data remains behind authentication.
+Steps:
+1. Open the normal COAL AI public link on mobile without signing in
+2. Verify the dashboard opens with a “Зочин · Demo” badge and demo fleet metrics; ask the AI a question
+3. Press “Google-ээр нэвтрэх” and complete sign-in
+Expected: The public link opens without an auth gate and only demo data is returned. Guest AI clearly says real company AI/data is protected. After Google sign-in, the authenticated flow continues to the user's isolated production data.
+
+## Test 6 - Admin sees trial-user data status without record contents
+Viewport: desktop
+Covers: GET /api/admin/user-data-summary, GET /api/admin/oyun-readonly, admin-only trial user overview, protected read-only OYUN management summary, per-user data isolation summary, Demo versus registered data status, last activity visibility
+Description: Verifies the system owner can see each signed-in trial user's aggregate data status without exposing the underlying vehicle, trip, fuel, maintenance, tire, document, or driver record contents.
+Steps:
+1. Sign in as the configured Admin and open “Эрхийн удирдлага”
+2. Review “Туршилтын хэрэглэгчид” and press “Шинэчлэх”
+3. Compare the visible counts and Demo/Бодит дата badges for the listed users
+Expected: Each known user is shown with Demo or Бодит дата, counts for machine/trip/fuel/maintenance/tire/document/driver records, total records and last access time; the admin-only OYUN read-only summary returns aggregate counts without any write capability, and no underlying record content is displayed.
