@@ -1,37 +1,14 @@
 import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const app = express();
-const PORT = Number(process.env.PORT || 3000);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use(express.json({ limit: '2mb' }));
-
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'COAL AI Transport 2026', version: '2.0.0' });
-});
-
-app.get('/api/dashboard', (_req, res) => {
-  res.json({
-    mode: 'demo',
-    stats: {
-      vehicles: 42,
-      activeVehicles: 34,
-      tripsToday: 164,
-      coalTons: 6420,
-      fuelLiters: 18730,
-      maintenance: 5,
-      idle: 3
-    }
-  });
-});
-
-const dist = path.join(__dirname, 'dist');
-app.use(express.static(dist));
-app.get(/.*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`COAL AI listening on ${PORT}`);
-});
+import pg from 'pg';
+const {Pool}=pg;
+const app=express();const PORT=Number(process.env.PORT||3000);
+app.use(express.json({limit:'2mb'}));
+app.use((req,res,next)=>{res.setHeader('Access-Control-Allow-Origin',process.env.FRONTEND_ORIGIN||'https://coal-ai-github-staging.onrender.com');res.setHeader('Access-Control-Allow-Credentials','true');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE,OPTIONS');if(req.method==='OPTIONS')return res.sendStatus(204);next();});
+const pool=process.env.DATABASE_URL?new Pool({connectionString:process.env.DATABASE_URL,ssl:{rejectUnauthorized:false}}):null;
+const fleet=[{plate:'ӨМӨ 8214',driver:'Б. Батсайхан',status:'Тээвэрт',trips:4,tons:152,fuel:438},{plate:'ӨМӨ 7741',driver:'Д. Тэмүүлэн',status:'Тээвэрт',trips:3,tons:114,fuel:321},{plate:'ӨМӨ 6108',driver:'Г. Мөнхтөр',status:'Засварт',trips:0,tons:0,fuel:0},{plate:'ӨМӨ 9320',driver:'Н. Энхбат',status:'Тээвэрт',trips:4,tons:148,fuel:512},{plate:'ӨМӨ 5582',driver:'С. Батзориг',status:'Сул',trips:0,tons:0,fuel:0}];
+const demo=()=>({vehicles:42,active:34,repair:5,idle:3,trips:164,tons:6420,fuel:18730,alerts:[{level:'medium',text:'Demo: 5 машин засварын төлөвтэй.'},{level:'low',text:'Demo GPS · бодит байршил биш.'}],dataMode:'demo',fleet});
+app.get('/api/health',async(_q,res)=>{let database='not-configured';try{if(pool){await pool.query('select 1');database='connected';}}catch{database='error';}res.json({ok:true,service:'COAL AI Render API',version:'3.0.0',database});});
+app.get('/api/demo-dashboard',(_q,res)=>res.json(demo()));
+app.get('/api/dashboard',async(_q,res)=>{try{const d=demo();if(pool){const q=await pool.query('select count(*)::int as total from fleet_records');if(Number(q.rows[0]?.total||0)>0)d.dataMode='registered';}res.json(d);}catch{res.status(500).json({message:'Database query failed'});}});
+app.get('/api/me',(_q,res)=>res.json({authorized:false,role:'dispatcher',migration:true}));
+app.listen(PORT,'0.0.0.0',()=>console.log('COAL AI Render API listening on '+PORT));
