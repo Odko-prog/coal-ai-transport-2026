@@ -161,6 +161,37 @@ app.post('/api/admin/migration-import',requireAuth,requireRole('admin'),async(re
  }catch{await client.query('rollback');res.status(500).json({message:'Migration rolled back; no partial batch committed'});}finally{client.release();}
 });
 
+
+app.post('/api/ai-manager',requireAuth,async(req,res)=>{
+ const question=String(req.body?.question||'').trim();
+ if(!question)return res.status(400).json({message:'Асуултаа оруулна уу'});
+ if(!ensureDb(res))return;
+ try{
+  const q=await pool.query('select kind,data from fleet_records where user_id=$1',[req.user.userId]);
+  const counts={}; for(const row of q.rows)counts[row.kind]=(counts[row.kind]||0)+1;
+  const answer='COAL AI бодит бүртгэлийн төлөв: '+Object.entries(counts).map(([k,v])=>k+' '+v).join(', ')+(q.rowCount?' байна.':' одоогоор бүртгэлгүй байна.')+' Асуулт: '+question;
+  res.json({ok:true,answer,dataMode:q.rowCount?'registered':'demo'});
+ }catch{res.status(500).json({message:'AI manager data query failed'});}
+});
+app.get('/api/admin/access-log',requireAuth,requireRole('admin'),async(_req,res)=>{
+ try{const q=await pool.query('select user_id,email,name,role,status,access_count as count,first_access,last_access from company_users order by last_access desc');res.json({items:q.rows});}
+ catch{res.status(500).json({message:'Access log failed'});}
+});
+app.get('/api/admin/user-data-summary',requireAuth,requireRole('admin'),async(_req,res)=>{
+ try{const u=await pool.query('select user_id,email,name,role,status,access_count,last_access from company_users order by last_access desc');const c=await pool.query('select user_id,kind,count(*)::int n from fleet_records group by user_id,kind');const items=u.rows.map(x=>{const counts={vehicles:0,trips:0,fuel:0,maintenance:0,tires:0,documents:0,drivers:0};for(const r of c.rows)if(r.user_id===x.user_id&&r.kind in counts)counts[r.kind]=r.n;const total=Object.values(counts).reduce((a,b)=>a+b,0);return {...x,accessCount:x.access_count,dataMode:total?'registered':'demo',total,counts};});res.json({items});}
+ catch{res.status(500).json({message:'User summary failed'});}
+});
+app.post('/api/admin/invites',requireAuth,requireRole('admin'),async(req,res)=>{
+ const email=String(req.body?.email||'').trim().toLowerCase(),role=['dispatcher','mechanic'].includes(req.body?.role)?req.body.role:'dispatcher';if(!email)return res.status(400).json({message:'Email шаардлагатай'});
+ try{const code=crypto.randomBytes(18).toString('base64url');await pool.query('insert into company_invites(code,email,role,expires_at,created_at) values($1,$2,$3,now()+interval \'7 days\',now())',[code,email,role]);res.status(201).json({ok:true,code});}
+ catch{res.status(500).json({message:'Invite failed'});}
+});
+app.post('/api/admin/roles',requireAuth,requireRole('admin'),async(req,res)=>{
+ const userId=String(req.body?.userId||''),role=String(req.body?.role||'');if(!userId||!['admin','dispatcher','mechanic'].includes(role))return res.status(400).json({message:'Буруу эрх'});
+ try{const q=await pool.query('update company_users set role=$1 where user_id=$2 returning user_id',[role,userId]);if(!q.rowCount)return res.status(404).json({message:'Хэрэглэгч олдсонгүй'});res.json({ok:true,message:'Хэрэглэгчийн эрх шинэчлэгдлээ'});}
+ catch{res.status(500).json({message:'Role update failed'});}
+});
+
 app.get('/api/me',async(req,res)=>{try{const u=await sessionUser(req);if(!u||u.status==='blocked')return res.status(401).json({authorized:false});res.json({authorized:true,userId:u.userId,email:u.email,name:u.name,role:u.role,migration:true});}catch{res.status(500).json({authorized:false,message:'Auth шалгалт амжилтгүй'});}});
 
 // Serve the built frontend from the same Render service. This removes cross-origin session/cookie issues.
