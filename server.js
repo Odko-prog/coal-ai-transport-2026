@@ -90,6 +90,25 @@ const fleet=[{plate:'ӨМӨ 8214',driver:'Б. Батсайхан',status:'Тээ
 const demo=()=>({vehicles:42,active:34,repair:5,idle:3,trips:164,tons:6420,fuel:18730,alerts:[{level:'medium',text:'Demo: 5 машин засварын төлөвтэй.'},{level:'low',text:'Demo GPS · бодит байршил биш.'}],dataMode:'demo',fleet});
 app.get('/api/health',async(_q,res)=>{let database='not-configured';try{if(pool){await pool.query('select 1');database='connected';}}catch{database='error';}res.json({ok:true,service:'COAL AI Render API',version:'3.0.0',database});});
 app.get('/api/demo-dashboard',(_q,res)=>res.json(demo()));
-app.get('/api/dashboard',requireAuth,async(req,res)=>{try{const d=demo();if(pool){const q=await pool.query('select count(*)::int as total from fleet_records where user_id=$1',[req.user.userId]);if(Number(q.rows[0]?.total||0)>0)d.dataMode='registered';}res.json(d);}catch{res.status(500).json({message:'Database query failed'});}});
+app.get('/api/dashboard',requireAuth,async(req,res)=>{
+ if(!ensureDb(res))return;
+ try{
+  const q=await pool.query('select kind,data from fleet_records where user_id=$1',[req.user.userId]);
+  if(!q.rowCount)return res.json(demo());
+  const by=(kind)=>q.rows.filter(r=>r.kind===kind).map(r=>r.data||{});
+  const vehicles=by('vehicles'),trips=by('trips'),fuel=by('fuel'),maintenance=by('maintenance');
+  const n=(v)=>Number(v||0)||0;
+  const active=vehicles.filter(v=>['Тээвэрт','active','working'].includes(String(v.status||''))).length;
+  const repair=vehicles.filter(v=>['Засварт','repair','maintenance'].includes(String(v.status||''))).length;
+  const idle=Math.max(0,vehicles.length-active-repair);
+  const tons=trips.reduce((s,x)=>s+n(x.tons??x.tonnage??x.weight),0);
+  const fuelTotal=fuel.reduce((s,x)=>s+n(x.liters??x.litres??x.amount??x.fuel),0);
+  const alerts=[];
+  if(repair)alerts.push({level:'medium',text:repair+' машин засварын төлөвтэй.'});
+  const openMaint=maintenance.filter(x=>!['done','completed','Дууссан'].includes(String(x.status||''))).length;
+  if(openMaint)alerts.push({level:'low',text:openMaint+' засварын бүртгэл нээлттэй байна.'});
+  res.json({vehicles:vehicles.length,active,repair,idle,trips:trips.length,tons,fuel:fuelTotal,alerts,dataMode:'registered',fleet:vehicles.slice(0,12).map(v=>({plate:v.plate||v.number||'—',driver:v.driver||v.driverName||'—',status:v.status||'—',trips:n(v.trips),tons:n(v.tons),fuel:n(v.fuel)}))});
+ }catch{res.status(500).json({message:'Database query failed'});}
+});
 app.get('/api/me',async(req,res)=>{try{const u=await sessionUser(req);if(!u||u.status==='blocked')return res.status(401).json({authorized:false});res.json({authorized:true,userId:u.userId,email:u.email,name:u.name,role:u.role,migration:true});}catch{res.status(500).json({authorized:false,message:'Auth шалгалт амжилтгүй'});}});
 app.listen(PORT,'0.0.0.0',()=>console.log('COAL AI Render API listening on '+PORT));
