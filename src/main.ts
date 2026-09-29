@@ -2,7 +2,7 @@ import './styles.css';
 type ApiResponse<T=any>={data:T};
 const API_BASE=(import.meta.env.VITE_API_BASE||'https://coal-ai-api-staging.onrender.com').replace(/\/$/,'');
 const request=async<T=any>(path:string,init:RequestInit={}):Promise<ApiResponse<T>>=>{const res=await fetch(API_BASE+path,{...init,headers:{'Content-Type':'application/json',...(init.headers||{})},credentials:'include'});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data?.message||('HTTP '+res.status));return {data};};
-const api={get:<T=any>(path:string)=>request<T>(path),post:<T=any>(path:string,body:any)=>request<T>(path,{method:'POST',body:JSON.stringify(body)})};
+const api={get:<T=any>(path:string)=>request<T>(path),post:<T=any>(path:string,body:any)=>request<T>(path,{method:'POST',body:JSON.stringify(body)}),delete:<T=any>(path:string)=>request<T>(path,{method:'DELETE'})};
 type SessionUser={authorized:boolean;userId?:string;email?:string;name?:string;role?:'admin'|'dispatcher'|'mechanic'};
 let sessionCache:SessionUser|null=null;
 const loadSession=async(force=false):Promise<SessionUser>=>{if(sessionCache&&!force)return sessionCache;try{sessionCache=(await request<SessionUser>('/api/me')).data;return sessionCache;}catch{sessionCache={authorized:false};return sessionCache;}};
@@ -158,9 +158,11 @@ async function renderRecords(view: string) {
       if (view === 'drivers') return `<div class='moduleRow'><b>${esc(x.name)}</b><span>${esc(x.employeeCode)}</span><span>${esc(x.plate || 'Машингүй')}</span><span>${esc(x.status)}</span></div>`;
       const days=Math.ceil((new Date(`${String(x.expiryDate)}T00:00:00`).getTime()-new Date().setHours(0,0,0,0))/86400000); const state=days<0?'Хугацаа дууссан':days<=30?`${days} хоног үлдсэн`:'Хэвийн'; const photo=x.fileUrl?`<a class='docPhoto' href='${esc(x.fileUrl)}' target='_blank' rel='noopener'>📷 Зураг харах</a>`:`<span class='noPhoto'>Зураггүй</span>`; return `<div class='moduleRow docRow'><b>${esc(x.type)}</b><span>${esc(x.name)}</span><span>${esc(x.expiryDate)}</span><span class='docState ${days<0?'expired':days<=30?'soon':'valid'}'>${esc(state)}</span>${photo}</div>`;
     };
-    list.innerHTML = items.length ? items.map(row).join('') : `<div class='emptyRecords'>Одоогоор бодитоор бүртгэсэн мэдээлэл алга.</div>`;
+    list.innerHTML = items.length ? items.map((x:any)=>`<div class='recordWrap'>${row(x)}${canDelete(view)?`<button class='deleteRecord' data-record-id='${esc(x.id)}' aria-label='Бүртгэл устгах'>Устгах</button>`:''}</div>`).join('') : `<div class='emptyRecords'>Одоогоор бодитоор бүртгэсэн мэдээлэл алга.</div>`;
+    if(canDelete(view)) list.querySelectorAll<HTMLButtonElement>('.deleteRecord').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.recordId;if(!id)return;btn.disabled=true;try{await api.delete(endpoint[view]+'/'+encodeURIComponent(id));await renderRecords(view);}catch{btn.disabled=false;}});
   } catch { list.innerHTML = `<div class='formError'>Бүртгэл түр уншигдсангүй.</div>`; }
 }
+function canDelete(_view:string){return currentRole==='admin'||currentRole==='dispatcher';}
 function canWrite(view: string) { if (currentRole === 'admin') return true; if (currentRole === 'mechanic') return ['maintenance','tires'].includes(view); return ['vehicles','trips','fuel','tires','drivers','documents'].includes(view); }
 function recordsOnly(title:string) { return `<section class='panel moduleTable'><div class='panelHead'><div><small>УНШИХ ЭРХ</small><h2>${title}</h2></div><span class='demoPill'>Зөвхөн харах</span></div><div id='realRecords'></div></section>`; }
 function registrationForm(view: string) {
